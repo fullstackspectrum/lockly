@@ -1,0 +1,17 @@
+dist/
+build/
+*.egg-info/
+__pycache__/
+.venv/
+.pytest_cache/
+reports/
+.DS_Store
+.vscode/
+.claude/
+CLAUDE.md
+
+# Local output
+/comment.md
+/review.json
+/lockly-*
+/report.html

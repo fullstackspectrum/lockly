@@ -1,0 +1,26 @@
+lockfileVersion: 5.4
+
+specifiers:
+  esbuild: ^0.15.0
+
+dependencies:
+  esbuild: 0.15.18
+
+packages:
+
+  /esbuild/0.15.18:
+    resolution: {integrity: sha512-EEE}
+    requiresBuild: true
+
+  /@esbuild/linux-x64/0.15.18:
+    resolution: {integrity: sha512-FFF}
+    cpu: [x64]
+
+  /acorn-jsx/5.3.2_acorn@8.8.1:
+    resolution: {integrity: sha512-GGG}
+    peerDependencies:
+      acorn: ^6.0.0 || ^7.0.0 || ^8.0.0
+
+  file:playground/dir:
+    resolution: {directory: playground/dir, type: directory}
+    name: '@demo/dir'

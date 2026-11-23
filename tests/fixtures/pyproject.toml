@@ -1,0 +1,6 @@
+[tool.poetry.dependencies]
+python = "^3.11"
+requests = "^2.32"
+
+[tool.poetry.group.dev.dependencies]
+pytest-mock = "^3.14"

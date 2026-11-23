@@ -1,0 +1,82 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install build
+      - run: python -m build
+      - run: pip install "$(ls dist/*.whl)[dev]"
+      - run: pytest -q
+
+  # The unit tests run offline; this checks the real thing against the npm
+  # registry and OSV, from outside the checkout so the installed wheel runs.
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install build && python -m build && pip install dist/*.whl
+      - name: Diff two npm lockfiles with registry and OSV lookups
+        working-directory: /tmp
+        run: |
+          mkdir -p old new
+          echo '{"name":"t","version":"1.0.0","dependencies":{"express":"4.17.1"}}' > old/package.json
+          echo '{"name":"t","version":"1.0.0","dependencies":{"express":"4.21.0","esbuild":"0.24.0"}}' > new/package.json
+          (cd old && npm install --package-lock-only --ignore-scripts --silent)
+          (cd new && npm install --package-lock-only --ignore-scripts --silent)
+          lockly diff old/package-lock.json new/package-lock.json --markdown comment.md --html report.html
+          grep -q "Install script" comment.md
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: twine check --strict dist/*
+
+  docker:
+    # The base images on dhi.io need a login, and pull requests from forks don't get
+    # secrets, so those skip the image build.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: lockly:ci
+      - name: Smoke test
+        run: |
+          docker run --rm lockly:ci --version
+          docker run --rm -v "$PWD/tests/fixtures:/data:ro" lockly:ci diff Cargo.lock Cargo.lock --offline

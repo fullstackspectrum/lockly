@@ -1,0 +1,150 @@
+name: Lockly lockfile review
+description: Explain the lockfile changes in a pull request and flag the ones that deserve a review, as one PR comment that updates on every push.
+author: Full-Stack-Spectrum
+branding:
+  icon: lock
+  color: blue
+
+inputs:
+  base:
+    description: Git ref to compare against. Defaults to the pull request's base commit.
+    default: ""
+  paths:
+    description: Space-separated paths to limit the search for changed lockfiles to. Empty searches the whole repository.
+    default: ""
+  fail-on:
+    description: Comma-separated finding types that fail the step, e.g. "install-script,publisher,hash". Empty never fails.
+    default: ""
+  offline:
+    description: Set to "true" to skip registry and OSV lookups and use only what the lockfiles say.
+    default: "false"
+  min-age:
+    description: Flag versions published less than this many days ago.
+    default: "3"
+  comment:
+    description: Post the review as a pull request comment, updated in place on each push. Needs pull-requests write permission.
+    default: "true"
+  title:
+    description: Title for the comment and reports.
+    default: ""
+  html:
+    description: Where to write the HTML report (handy for an artifact upload).
+    default: lockly-report.html
+  markdown:
+    description: Where to write the Markdown summary.
+    default: lockly-review.md
+  json:
+    description: Where to write the JSON results.
+    default: lockly-review.json
+  version:
+    description: Lockly version to install from PyPI. Empty installs the latest.
+    default: ""
+  token:
+    description: Token for posting the comment.
+    default: ${{ github.token }}
+
+outputs:
+  markdown:
+    description: Path to the Markdown summary.
+    value: ${{ steps.review.outputs.markdown }}
+  html:
+    description: Path to the HTML report.
+    value: ${{ steps.review.outputs.html }}
+  json:
+    description: Path to the JSON results.
+    value: ${{ steps.review.outputs.json }}
+  findings:
+    description: Number of findings worth a review.
+    value: ${{ steps.review.outputs.findings }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      id: python
+      with:
+        python-version: "3.14"
+        update-environment: false
+
+    - id: review
+      shell: bash
+      # Inputs go through the environment, never into the script text, so a
+      # crafted ref, path or title can't inject shell.
+      env:
+        PYTHON: ${{ steps.python.outputs.python-path }}
+        BASE: ${{ inputs.base || github.event.pull_request.base.sha }}
+        PATHS: ${{ inputs.paths }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        OFFLINE: ${{ inputs.offline }}
+        MIN_AGE: ${{ inputs.min-age }}
+        TITLE: ${{ inputs.title }}
+        HTML: ${{ inputs.html }}
+        MD: ${{ inputs.markdown }}
+        JSON: ${{ inputs.json }}
+        LOCKLY_VERSION: ${{ inputs.version }}
+      run: |
+        if [ -z "$BASE" ]; then
+          echo "::error::No base to compare against: set the 'base' input, or run on pull_request events."
+          exit 2
+        fi
+        # actions/checkout is shallow by default, so the base commit may be missing.
+        git fetch --no-tags --quiet origin "$BASE" 2>/dev/null || true
+
+        "$PYTHON" -m venv "$RUNNER_TEMP/lockly"
+        "$RUNNER_TEMP/lockly/bin/pip" install --quiet "lockly${LOCKLY_VERSION:+==$LOCKLY_VERSION}"
+
+        args=(diff --base "$BASE" --min-age "$MIN_AGE" --html "$HTML" --markdown "$MD" --json "$JSON")
+        [ -n "$FAIL_ON" ] && args+=(--fail-on "$FAIL_ON")
+        [ "$OFFLINE" = "true" ] && args+=(--offline)
+        [ -n "$TITLE" ] && args+=(--title "$TITLE")
+        # shellcheck disable=SC2206  # paths are space-separated by design
+        [ -n "$PATHS" ] && args+=($PATHS)
+
+        set +e
+        "$RUNNER_TEMP/lockly/bin/lockly" "${args[@]}"
+        code=$?
+        set -e
+
+        [ -f "$MD" ] && cat "$MD" >> "$GITHUB_STEP_SUMMARY"
+        findings=$("$RUNNER_TEMP/lockly/bin/python" -c 'import json,sys; print(json.load(open(sys.argv[1]))["summary"]["findings"])' "$JSON" 2>/dev/null || echo 0)
+        {
+          echo "markdown=$MD"
+          echo "html=$HTML"
+          echo "json=$JSON"
+          echo "findings=$findings"
+          echo "exit-code=$code"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Comment on the pull request
+      if: ${{ inputs.comment == 'true' && github.event.pull_request.number }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ github.repository }}
+        PR: ${{ github.event.pull_request.number }}
+        MD: ${{ inputs.markdown }}
+        JSON: ${{ inputs.json }}
+      run: |
+        [ -f "$MD" ] || exit 0
+        # One comment per pull request, found by the marker Lockly writes and
+        # edited in place, so pushes don't pile up comments.
+        existing=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+          --jq '.[] | select(.body | startswith("<!-- lockly -->")) | .id' 2>/dev/null | head -n1 || true)
+        changed=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(sum(len(l["changes"]) for l in d["lockfiles"]))' "$JSON" 2>/dev/null || echo 0)
+        if [ -z "$existing" ] && [ "$changed" = "0" ]; then
+          exit 0  # nothing to say, and nothing said before
+        fi
+        body=$(jq -Rs '{body: .}' < "$MD")
+        if [ -n "$existing" ]; then
+          echo "$body" | gh api --method PATCH "repos/$REPO/issues/comments/$existing" --input - >/dev/null \
+            || echo "::warning::Couldn't update the Lockly comment (fork pull requests get a read-only token)."
+        else
+          echo "$body" | gh api --method POST "repos/$REPO/issues/$PR/comments" --input - >/dev/null \
+            || echo "::warning::Couldn't post the Lockly comment (fork pull requests get a read-only token)."
+        fi
+
+    - name: Apply the gate
+      shell: bash
+      env:
+        CODE: ${{ steps.review.outputs.exit-code }}
+      run: exit "${CODE:-0}"

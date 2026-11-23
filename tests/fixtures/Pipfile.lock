@@ -1,0 +1,14 @@
+{
+    "_meta": {"hash": {"sha256": "x"}, "pipfile-spec": 6, "requires": {},
+              "sources": [{"name": "pypi", "url": "https://pypi.org/simple", "verify_ssl": true},
+                          {"name": "corp", "url": "https://pypi.corp.example.com/simple", "verify_ssl": true}]},
+    "default": {
+        "requests": {"hashes": ["sha256:aaa"], "index": "pypi", "version": "==2.32.3"},
+        "corp-lib": {"hashes": ["sha256:bbb"], "index": "corp", "version": "==1.0.0"},
+        "edge": {"git": "https://github.com/example/edge.git", "ref": "0123456789abcdef0123"}
+    },
+    "develop": {
+        "requests": {"hashes": ["sha256:aaa"], "index": "pypi", "version": "==2.32.3"},
+        "pytest": {"hashes": ["sha256:ccc"], "index": "pypi", "version": "==8.2.0"}
+    }
+}

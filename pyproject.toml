@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lockly"
+dynamic = ["version"]
+description = "Explain lockfile changes in a pull request: what moved, and which changes deserve a look (install scripts, new publishers, fresh releases, vulnerabilities)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+authors = [
+    { name = "Colin Moynes", email = "dev@fullstackspectrum.com" },
+]
+keywords = ["lockfile", "dependencies", "supply-chain", "security", "npm", "pypi", "cargo", "go", "pull-request", "code-review"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/fullstackspectrum/lockly"
+Issues = "https://github.com/fullstackspectrum/lockly/issues"
+
+[project.scripts]
+lockly = "lockly:main"
+
+[tool.setuptools.dynamic]
+# One source of truth: the release workflow checks the tag against __version__.
+version = { attr = "lockly.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["lockly*"]
+
+[tool.setuptools.package-data]
+lockly = ["py.typed", "assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Import lockly from the working tree so the suite runs without installing.
+pythonpath = [".", "tests"]
